@@ -1,0 +1,118 @@
+# Comments are provided throughout this file to help you get started.
+# If you need more help, visit the Docker Compose reference guide at
+# https://docs.docker.com/go/compose-spec-reference/
+
+# Here the instructions define your application as a service called "server".
+# This service is built from the Dockerfile in the current directory.
+# You can add other services your application may depend on here, such as a
+# database or a cache. For examples, see the Awesome Compose repository:
+# https://github.com/docker/awesome-compose
+services:
+  redis:
+    image: redis:latest
+    #restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/root/redis
+      #- redis-data/redis.conf:/usr/local/etc/redis/redis.conf
+    environment:
+      #- REDIS_PASSWORD=secret
+      - REDIS_PORT=6379
+      - REDIS_DATABASES=16
+    networks:
+      vpcbr:
+        ipv4_address: 10.123.0.7
+
+  db:
+     build:
+       context: ./postgres_build
+     user: postgres
+     volumes:
+       - db-data:/var/lib/postgresql
+     env_file:
+       - ./.env_postgres
+     ports:
+       - 5432:5432
+     networks:
+       vpcbr:
+         ipv4_address: 10.123.0.5
+
+  rabbit:
+    image: rabbitmq
+    networks:
+      vpcbr:
+        ipv4_address: 10.123.0.8
+
+  phone_server:
+    build:
+      context: ./tests/rpc_server
+    depends_on:
+      - rabbit
+    networks:
+      vpcbr:
+        ipv4_address: 10.123.0.9
+
+  server:
+    networks:
+      vpcbr:
+        ipv4_address: 10.123.0.6
+    build:
+      context: .
+    depends_on:
+      - db
+      - redis
+      - rabbit
+      - phone_server
+    env_file:
+      - ./.env
+    ports:
+      - 8080:8080
+
+networks:
+  vpcbr:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.123.0.0/16
+          gateway: 10.123.0.1
+
+volumes:
+  db-data:
+    external: true
+  redis-data:
+    external: true
+
+# The commented out section below is an example of how to define a PostgreSQL
+# database that your application can use. `depends_on` tells Docker Compose to
+# start the database before your application. The `db-data` volume persists the
+# database data between container restarts. The `db-password` secret is used
+# to set the database password. You must create `db/password.txt` and add
+# a password of your choosing to it before running `docker compose up`.
+#     depends_on:
+#       db:
+#         condition: service_healthy
+#   db:
+#     image: postgres
+#     restart: always
+#     user: postgres
+#     secrets:
+#       - db-password
+#     volumes:
+#       - db-data:/var/lib/postgresql/data
+#     environment:
+#       - POSTGRES_DB=example
+#       - POSTGRES_PASSWORD_FILE=/run/secrets/db-password
+#     expose:
+#       - 5432
+#     healthcheck:
+#       test: [ "CMD", "pg_isready" ]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 5
+# volumes:
+#   db-data:
+# secrets:
+#   db-password:
+#     file: db/password.txt
+
